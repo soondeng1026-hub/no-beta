@@ -1,36 +1,21 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# No Beta
 
-## Getting Started
+这是一个没有代码经验的小白第一次做的vibe coding 项目，是一个个人抱石工具，帮助你拆解攀岩路线并记录你的 beta 视频。全程是在claude和cursor的帮助下完成的，其中感觉最容易卡的就是接入豆包大模型，不知道怎么接入id以及用哪些大模型，在测试环境没有问题，结果推到线上，AI分析又出现各种bug,甚至上线之后还在不断改，这下终于明白做程序员有多少不容易了。第一次vibe coding项目为什么选择和抱石相关呢？个人觉得自己要做一款产品，就应该从生活中自己感兴趣的方面入手，作为一个攀岩小白，很多时候在攀岩馆面对着墙想不出beta的时候真的很难受，所以我就思考，是不是可以利用ai来辅助我分析呢？
 
-First, run the development server:
+所以想要做这一款协助路线分析同时可以保存自己每次探索beta视频的app，大概花了半天时间，demo成型了，但这款产品目前还非常粗糙，第一我没有给ai补充足够多的攀岩抱石知识库，第二ai分析经常出现问题，第三记忆库分类不够精细，所以我想把这个idea以及代码开源给大家，如果大家对这个idea感兴趣，并且有更丰富的代码经验，欢迎把这个产品做的更好！
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## 功能
+- 📸 AI 路线分析 — 上传岩壁照片，即时获取岩点分布和动作顺序分析
+- 🎥 Beta 视频库 — 上传并回顾你的攀岩练习视频
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 技术栈
+- Next.js 15
+- 豆包视觉大模型（Doubao Vision AI）
+- Tailwind CSS + shadcn/ui
+- Vercel 部署
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 在线体验
+https://no-beta-vert.vercel.app
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+由一个抱石爱好者，为抱石爱好者而做。
