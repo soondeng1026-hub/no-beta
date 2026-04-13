@@ -223,19 +223,33 @@ export function RouteAnalysis() {
     setFailMessage(null);
 
     try {
+      /** 完整 data URL，与方舟 image_url.url 一致；服务端也接受裸 base64 + mimeType */
+      const imageDataUrl = `data:${mime};base64,${parts.base64}`;
+
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          imageBase64: parts.base64,
+          imageBase64: imageDataUrl,
           mimeType: mime,
         }),
       });
 
-      const body: unknown = await res.json().catch(() => ({}));
+      const rawText = await res.text();
+      let body: unknown = {};
+      if (rawText) {
+        try {
+          body = JSON.parse(rawText) as unknown;
+        } catch {
+          body = {};
+        }
+      }
+
       const errObj = body as {
         error?: string;
         message?: string;
+        detail?: string;
+        preview?: string;
       };
 
       if (res.status === 400 && errObj.error === "too_large") {
@@ -246,22 +260,33 @@ export function RouteAnalysis() {
 
       if (res.status === 503 && errObj.error === "missing_api_key") {
         setFailMessage(
-          "Server missing DOUBAO_API_KEY or ARK_API_KEY. Add to .env.local and restart dev.",
+          errObj.message ||
+            "Server missing DOUBAO_API_KEY or ARK_API_KEY. Set in Vercel env or .env.local and redeploy / restart.",
         );
         setStep("failed");
         return;
       }
 
       if (!res.ok) {
+        const pieces = [
+          errObj.message,
+          errObj.detail,
+          errObj.preview,
+          !errObj.message && rawText ? rawText.slice(0, 280) : null,
+        ].filter(Boolean);
         setFailMessage(
-          errObj.message || errObj.error || "Analysis failed, please try again",
+          pieces.length > 0
+            ? pieces.join(" · ")
+            : errObj.error || `HTTP ${res.status}`,
         );
         setStep("failed");
         return;
       }
 
       if (!isRouteAnalysisResult(body)) {
-        setFailMessage("Invalid response from server");
+        setFailMessage(
+          `Invalid response from server · ${rawText.slice(0, 200)}`,
+        );
         setStep("failed");
         return;
       }
@@ -275,8 +300,15 @@ export function RouteAnalysis() {
         result: body,
         timestamp: Date.now(),
       });
-    } catch {
-      setFailMessage("Analysis failed, please try again");
+    } catch (e) {
+      console.error("[RouteAnalysis] analyze fetch failed", e);
+      const msg =
+        e instanceof TypeError && e.message.includes("fetch")
+          ? "Network error (offline, CORS, or blocked request)"
+          : e instanceof Error
+            ? e.message
+            : "Analysis failed, please try again";
+      setFailMessage(msg);
       setStep("failed");
     }
   };

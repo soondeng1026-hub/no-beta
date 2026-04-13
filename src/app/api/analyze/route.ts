@@ -8,8 +8,12 @@ import {
 
 export const runtime = "nodejs";
 
+/** Vercel / 部分托管对 Serverless 请求体有上限；大图 base64 易触发 413，需在平台侧放宽或压缩图片 */
+export const maxDuration = 60;
+
 const MAX_BYTES = 10 * 1024 * 1024;
 
+/** 方舟 OpenAI 兼容 Chat Completions（视觉多模态） */
 const ARK_URL = "https://ark.cn-beijing.volces.com/api/v3/chat/completions";
 
 /**
@@ -96,29 +100,52 @@ function firstNonEmptyArkKeyEnv(): string {
   return "";
 }
 
+function logEnvSnapshot(apiKey: string, model: string) {
+  const keyPrefix = apiKey ? `${apiKey.slice(0, 6)}…` : "(empty)";
+  console.log(
+    "[analyze] env:",
+    "DOUBAO_API_KEY prefix",
+    keyPrefix,
+    "len=" + apiKey.length,
+    "| DOUBAO_MODEL / resolved model:",
+    model,
+  );
+}
+
 export async function POST(request: Request) {
+  const rawKey = firstNonEmptyArkKeyEnv();
+  const apiKey = rawKey ? normalizeArkApiKey(rawKey) : "";
+  const model =
+    process.env.DOUBAO_MODEL?.trim() || DEFAULT_VISION_MODEL;
+
   try {
-    const rawKey = firstNonEmptyArkKeyEnv();
-    const apiKey = rawKey ? normalizeArkApiKey(rawKey) : "";
     if (!apiKey) {
+      console.error("[analyze] missing DOUBAO_API_KEY / ARK_API_KEY");
       return NextResponse.json(
         {
           error: "missing_api_key",
           message:
-            "DOUBAO_API_KEY or ARK_API_KEY is not configured in .env.local",
+            "DOUBAO_API_KEY or ARK_API_KEY is not set (add in Vercel Project → Settings → Environment Variables)",
         },
         { status: 503 }
       );
     }
 
-    const model =
-      process.env.DOUBAO_MODEL?.trim() || DEFAULT_VISION_MODEL;
+    logEnvSnapshot(apiKey, model);
 
     let body: AnalyzeBody;
     try {
       body = (await request.json()) as AnalyzeBody;
-    } catch {
-      return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+    } catch (e) {
+      console.error("[analyze] request.json() failed", e);
+      return NextResponse.json(
+        {
+          error: "invalid_json",
+          message: "Request body is not valid JSON (body may exceed platform size limit)",
+          detail: e instanceof Error ? e.message : String(e),
+        },
+        { status: 400 }
+      );
     }
 
     let b64 = body.imageBase64?.trim() ?? "";
@@ -133,67 +160,115 @@ export async function POST(request: Request) {
     }
 
     if (!b64) {
-      return NextResponse.json({ error: "no_image" }, { status: 400 });
+      console.error("[analyze] empty image after parse");
+      return NextResponse.json(
+        {
+          error: "no_image",
+          message: "No image data: send imageBase64 as raw base64 or full data:image/...;base64,... string",
+        },
+        { status: 400 }
+      );
     }
 
     let buf: Buffer;
     try {
       buf = Buffer.from(b64, "base64");
-    } catch {
-      return NextResponse.json({ error: "invalid_base64" }, { status: 400 });
+    } catch (e) {
+      console.error("[analyze] Buffer.from base64 failed", e);
+      return NextResponse.json(
+        {
+          error: "invalid_base64",
+          message: "imageBase64 is not valid base64",
+          detail: e instanceof Error ? e.message : String(e),
+        },
+        { status: 400 }
+      );
     }
 
     if (buf.length === 0) {
-      return NextResponse.json({ error: "no_image" }, { status: 400 });
+      return NextResponse.json(
+        { error: "no_image", message: "Decoded image is empty" },
+        { status: 400 }
+      );
     }
 
     if (buf.length > MAX_BYTES) {
-      return NextResponse.json({ error: "too_large" }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: "too_large",
+          message: `Image larger than ${MAX_BYTES} bytes after decode`,
+        },
+        { status: 400 }
+      );
     }
 
     if (!mime.startsWith("image/")) {
-      return NextResponse.json({ error: "invalid_mime" }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: "invalid_mime",
+          message: `mimeType must be image/*, got: ${mime}`,
+        },
+        { status: 400 }
+      );
     }
 
-    const res = await fetch(ARK_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      // 结构对齐官方示例：先 image_url 再 text；图片用 data URL（本地上传无公网 URL 时）
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          {
-            role: "user",
-            content: [
-              {
-                image_url: {
-                  url: `data:${mime};base64,${b64}`,
-                },
-                type: "image_url",
-              },
-              {
-                text: "请根据上图输出上述 JSON 结构。",
-                type: "text",
-              },
-            ],
-          },
-        ],
-      }),
-    });
+    const imageUrlForArk = `data:${mime};base64,${b64}`;
+    const arkPayload = {
+      model,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: [
+            {
+              image_url: { url: imageUrlForArk },
+              type: "image_url",
+            },
+            {
+              text: "请根据上图输出上述 JSON 结构。",
+              type: "text",
+            },
+          ],
+        },
+      ],
+    };
+
+    let res: Response;
+    try {
+      res = await fetch(ARK_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(arkPayload),
+      });
+    } catch (e) {
+      console.error("[analyze] fetch Ark network error", ARK_URL, e);
+      return NextResponse.json(
+        {
+          error: "ark_fetch_failed",
+          message: "Could not reach Ark API (network / DNS / TLS)",
+          detail: e instanceof Error ? e.message : String(e),
+        },
+        { status: 502 }
+      );
+    }
 
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
+      console.error(
+        "[analyze] Ark HTTP error",
+        res.status,
+        errText.slice(0, 500),
+      );
       let message = `Ark HTTP ${res.status}: ${errText.slice(0, 280)}`;
       if (res.status === 401) {
         message +=
           " — Use YOUR Ark API Key from console → API Key management (not IAM AccessKey/Secret). Env: DOUBAO_API_KEY or ARK_API_KEY; one line, no quotes around the value.";
         if (apiKey.toLowerCase() === DOC_SAMPLE_ARK_API_KEY) {
           message +=
-            " 【当前值是官方 curl 里的示例 Key，无法调用】请到控制台新建 API Key 并替换 .env.local，然后重启 next dev。";
+            " 【当前值是官方 curl 里的示例 Key，无法调用】请到控制台新建 API Key 并替换环境变量。";
         }
       }
       if (res.status === 404 || errText.includes("InvalidEndpointOrModel")) {
@@ -201,26 +276,74 @@ export async function POST(request: Request) {
           " — Set DOUBAO_MODEL to your inference endpoint ID from Ark console (starts with ep-), copied from the endpoint list / “API 调用”. Model name strings vary by account; ep- ID is most reliable.";
       }
       return NextResponse.json(
-        { error: "upstream_error", message },
+        { error: "upstream_error", message, detail: `status=${res.status}` },
         { status: 502 }
       );
     }
 
-    const data: unknown = await res.json();
+    let data: unknown;
+    try {
+      data = await res.json();
+    } catch (e) {
+      console.error("[analyze] Ark 200 but response is not JSON", e);
+      return NextResponse.json(
+        {
+          error: "invalid_upstream_json",
+          message: "Ark returned 200 but body was not JSON",
+          detail: e instanceof Error ? e.message : String(e),
+        },
+        { status: 502 }
+      );
+    }
+
     const content = extractAssistantText(data);
     if (!content) {
-      return NextResponse.json({ error: "empty_model_response" }, { status: 502 });
+      console.error(
+        "[analyze] empty model content",
+        JSON.stringify(data).slice(0, 800),
+      );
+      return NextResponse.json(
+        {
+          error: "empty_model_response",
+          message: "Ark returned no assistant text in choices[0].message.content",
+          detail: JSON.stringify(data).slice(0, 400),
+        },
+        { status: 502 }
+      );
     }
 
     let result: RouteAnalysisResult;
     try {
       result = parseModelJsonToResult(content);
-    } catch {
-      return NextResponse.json({ error: "parse_failed" }, { status: 502 });
+    } catch (e) {
+      console.error(
+        "[analyze] parseModelJsonToResult failed",
+        e,
+        "content_head:",
+        content.slice(0, 400),
+      );
+      return NextResponse.json(
+        {
+          error: "parse_failed",
+          message:
+            "Model output could not be parsed as route analysis JSON",
+          detail: e instanceof Error ? e.message : String(e),
+          preview: content.slice(0, 220),
+        },
+        { status: 502 }
+      );
     }
 
     return NextResponse.json(result);
-  } catch {
-    return NextResponse.json({ error: "analysis_failed" }, { status: 500 });
+  } catch (e) {
+    console.error("[analyze] unhandled error", e);
+    return NextResponse.json(
+      {
+        error: "analysis_failed",
+        message: "Unhandled error in /api/analyze",
+        detail: e instanceof Error ? e.message : String(e),
+      },
+      { status: 500 }
+    );
   }
 }
