@@ -83,10 +83,13 @@ export function BottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 border-t-2 border-[#1a1a1a] bg-white"
+      className="fixed bottom-0 left-0 right-0 z-50 overflow-visible border-t-2 border-[#1a1a1a] bg-white"
+      style={{
+        paddingBottom: "max(12px, env(safe-area-inset-bottom, 0px))",
+      }}
       aria-label="Primary"
     >
-      <ul className="mx-auto flex max-w-lg items-stretch justify-around px-2 py-2">
+      <ul className="mx-auto flex max-w-lg items-stretch justify-evenly px-1 pt-2">
         {items.map(({ href, label, Icon }) => {
           const active =
             href === "/"
@@ -94,16 +97,26 @@ export function BottomNav() {
               : pathname === href || pathname.startsWith(`${href}/`);
 
           return (
-            <li key={href} className="flex-1">
+            <li key={href} className="flex min-w-0 flex-1 justify-center">
               <Link
                 href={href}
+                aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex flex-col items-center gap-1 rounded-[4px] px-3 py-2 text-xs font-medium text-[#1a1a1a] transition-colors",
-                  active ? "bg-[#f5f4f0]" : "hover:bg-[#f5f4f0]/80"
+                  "flex w-full max-w-[120px] flex-col items-center justify-start gap-1 rounded-[4px] px-1 pb-1 pt-0.5 transition-colors",
+                  active
+                    ? "bg-[#f5f4f0] font-semibold text-[#1a1a1a]"
+                    : "font-medium text-[#1a1a1a]/60 hover:bg-[#f5f4f0]/70 hover:text-[#1a1a1a]"
                 )}
               >
-                <Icon className="size-6" />
-                <span>{label}</span>
+                <Icon
+                  className={cn(
+                    "size-5 shrink-0 sm:size-6",
+                    active ? "text-[#1a1a1a]" : "text-[#1a1a1a]/55"
+                  )}
+                />
+                <span className="block w-full pb-0.5 text-center text-[11px] font-medium leading-[1.35] tracking-tight sm:text-xs">
+                  {label}
+                </span>
               </Link>
             </li>
           );
