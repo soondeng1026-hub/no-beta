@@ -4,7 +4,7 @@ import { RouteAnalysis } from "@/components/route-analysis";
 
 /**
  * Route Analysis：选图预览 → POST /api/analyze（base64）→ 豆包视觉 → 展示统计与步骤。
- * 交互与 UI 实现在 `src/components/route-analysis.tsx`。
+ * 选图后在 Client 内用 Canvas 压至最大宽 800px、JPEG quality 0.7，再转 base64（见 `route-analysis.tsx` + `lib/compress-wall-image.ts`）。
  */
 export const metadata: Metadata = {
   title: "Route Analysis · No Beta",

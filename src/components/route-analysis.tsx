@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { RouteAnalysisResult } from "@/lib/analysis-types";
 import { isRouteAnalysisResult } from "@/lib/analysis-types";
+import { compressWallImageToJpegBlob } from "@/lib/compress-wall-image";
 import { appendRouteAnalysis } from "@/lib/route-analysis-history";
 import { AppPageBackground } from "@/components/app-page-background";
 import { cn } from "@/lib/utils";
@@ -191,15 +192,32 @@ export function RouteAnalysis() {
       setSizeError(check.message);
       return;
     }
-    pickedMimeRef.current = check.mime;
 
-    fileRef.current = f;
-    setResult(null);
-    setPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return URL.createObjectURL(f);
-    });
-    setStep("ready");
+    void (async () => {
+      try {
+        const jpegBlob = await compressWallImageToJpegBlob(f);
+        if (jpegBlob.size > MAX_BYTES) {
+          setSizeError("Image too large, max 10MB");
+          return;
+        }
+        const baseName = f.name.replace(/\.[^.]+$/, "") || "wall";
+        const compressedFile = new File([jpegBlob], `${baseName}.jpg`, {
+          type: "image/jpeg",
+        });
+        pickedMimeRef.current = "image/jpeg";
+        fileRef.current = compressedFile;
+        setResult(null);
+        setPreviewUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return URL.createObjectURL(compressedFile);
+        });
+        setStep("ready");
+      } catch (err) {
+        setSizeError(
+          err instanceof Error ? err.message : "Could not compress image",
+        );
+      }
+    })();
   };
 
   const runAnalyze = async () => {

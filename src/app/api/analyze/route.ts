@@ -6,10 +6,12 @@ import {
   type RouteAnalysisResult,
 } from "@/lib/analysis-types";
 
+/** Vercel Hobby 默认 10s；与 Pro 等套餐配合可提高上限，避免豆包视觉慢请求 FUNCTION_INVOCATION_TIMEOUT */
+export const maxDuration = 60;
+
 export const runtime = "nodejs";
 
-/** Vercel / 部分托管对 Serverless 请求体有上限；大图 base64 易触发 413，需在平台侧放宽或压缩图片 */
-export const maxDuration = 60;
+/** Vercel / 部分托管对 Serverless 请求体有上限；大图 base64 易触发 413；前端已压缩 JPEG 以减小体积 */
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
